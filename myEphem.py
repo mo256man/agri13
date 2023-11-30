@@ -20,8 +20,8 @@ class Ephem():
 
 
     def get_data(self):
-        dt = datetime.date.today()              # ローカル日付
-        tz = datetime.timedelta(hours=+9)       # 日本とUTCの時差
+        dt = datetime.date.today()                              # ローカル日付
+        tz = datetime.timedelta(hours=+9)                       # 日本とUTCの時差
 
         # 日の出と日没の時刻を計算
         self.observer.date = dt

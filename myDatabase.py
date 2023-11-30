@@ -9,6 +9,7 @@ import matplotlib.dates as mdates
 import numpy as np
 import cv2
 import base64
+from myEphem import Ephem
 
 class DB():
     def __init__(self):
@@ -40,8 +41,8 @@ class DB():
         self.ephem_config = {   "place": dict["place"],
                                 "lat": dict["lat"],
                                 "lon": dict["lon"],
-                                "elev": dict["elev"],
-                            }
+                                "elev": dict["elev"]}
+        self.ephem = Ephem(self.ephem_config)
         return dict
 
 
@@ -57,7 +58,7 @@ class DB():
         df.to_sql("config", conn, if_exists="replace", index=None)      # dfをデータベースに書き込む
         cur.close()
         conn.close()
-        self.cumsum_date = df.at["cumsum_date", "value"]              # 累計の始点
+        self.cumsum_date = df.at["cumsum_date", "value"]                # 累計の始点
 
 
     def set_temperature(self, temp, humi, strdt=None):
@@ -97,6 +98,11 @@ class DB():
         Args:
             date: 日付（文字列）
         """
+        print("*"*100)
+        print(self.ephem_config)
+        config = self.ephem_config                                      # 緯度経度などの設定を取り込む
+        dict = self.ephem.get_data()                                    # 暦を算出する
+        self.set_ephem(dict)                                            # サマリーに今日の暦を書き込む
         summary_exists = self.exists("summary", date)                   # サマリーにその日のデータがあるか
         temp_exists = self.exists("temperature", date)                  # 温湿度テーブルにその日のデータがあるか
         if temp_exists:                                                 # 温湿度テーブルにその日のデータがあるならば
@@ -157,6 +163,7 @@ class DB():
         width_px, height_px = 900, 200                                  # ピクセルでのサイズ
         width_in, height_in = width_px/self.dpi, height_px/self.dpi     # インチでのサイズ（整数でなくてもよい）
         fig, ax = plt.subplots(figsize=(width_in, height_in))
+        ax = plt.axes([0.3, 0.1, 0.7, 0.9])
         ax.spines["right"].set_visible(False)
         ax.spines["top"].set_visible(False)
         plt.gca().spines['right'].set_visible(False)
@@ -337,6 +344,7 @@ class DB():
         width_px, height_px = 900, 200                                  # ピクセルでのサイズ
         width_in, height_in = width_px/self.dpi, height_px/self.dpi     # インチでのサイズ（整数でなくてもよい）
         fig, ax = plt.subplots(figsize=(width_in, height_in))
+        ax = plt.axes([0.3, 0.1, 0.7, 0.9])
         ax.spines["right"].set_visible(False)
         ax.spines["top"].set_visible(False)
         ax.set_xlim(dt_0, dt_24)                                        # x軸の範囲
@@ -414,13 +422,13 @@ class DB():
                         }                                               # 日ごとの辞書として登録する
         return dict
 
-
-    def set_summary(self, date):
-        """
-        サマリーデータを登録する
-        Args:
-            date: 日付（文字列）
-        """
+    """
+    def set_summary_old(self, date):
+        #
+        #サマリーデータを登録する
+        #Args:
+        #    date: 日付（文字列）
+        #
         conn = sqlite3.connect(self.dbname)
         cur = conn.cursor()
         summary_exists = self.exists("summary", date)                   # サマリーにその日のデータがあるか
@@ -457,6 +465,7 @@ class DB():
 
         cur.close()
         conn.close()
+    """
 
 
     def get_temperature(self, date=None):
@@ -601,14 +610,14 @@ class DB():
 
 
 
-
+    """
     def set_LED_old(self, minute):
-        """
-        LED点灯時間をDBに追加する
-        Args:
-            minute : 時間（分）
-            _      : 登録日時指定不可（今を点灯終了時刻とする）
-        """
+        #
+        #LED点灯時間をDBに追加する
+        #Args:
+        #    minute : 時間（分）
+        #    _      : 登録日時指定不可（今を点灯終了時刻とする）
+        #
         conn = sqlite3.connect(self.dbname)
         cur = conn.cursor()
         now = datetime.datetime.now()                                   # 今
@@ -621,7 +630,7 @@ class DB():
         cur.close()
         conn.close()
         self.set_summary(date)                                          # その日のサマリーデータを更新する
-
+    """
 
     def getLED(self, date=None):
         """
@@ -671,6 +680,7 @@ class DB():
     def set_ephem(self, dict):
         """
         日の出・日の入り時刻をサマリーに登録する
+        起動時にOSの時計が遅れていることがあるので、サマリーデータ登録する都度おこなう
         Args:
             dict : 辞書
         """

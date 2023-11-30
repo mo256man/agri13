@@ -49,6 +49,7 @@ app = Flask(__name__)
 def index():
     return render_template("index.html")
 
+
 @app.route("/writeDB", methods = ["POST"])
 def writeDB():
     if request.method == "POST":
@@ -98,7 +99,6 @@ def getSummaryTable():
 @app.route("/showSummaryGraph", methods=["POST"])
 def showSummaryGraph():
     if request.method == "POST":
-        print("今からグラフ描くぞ")
         # サマリー取得
         cumsum_date = db.cumsum_date
         print(cumsum_date)
@@ -134,13 +134,14 @@ def getEphem():
 @app.route("/getHumi", methods=["POST"])
 def getHumi():
     if request.method == "POST":
+        getEphem()                                      # 都度、暦を取得する
         is_try = request.form["isTry"]
-        if is_try=="true":                          # トライならば
+        if is_try=="true":                              # トライならば
             temp = random.randint(30, 60)
             humi = random.randint(60, 90)
-        else:                                       # 本番ならば
+        else:                                           # 本番ならば
             print("本番")
-            for i in range(10):                     # センサー値取得失敗するかもしれないので10回ループする
+            for i in range(10):                         # センサー値取得失敗するかもしれないので10回ループする
                 result = humi_sensor.read()
                 if result.is_valid():                   # センサー値取得できたら
                     temp = round(result.temperature, 1) # 温度 小数第一位まで
@@ -160,20 +161,21 @@ def getHumi():
 @app.route("/enpowerLED", methods=["POST"])
 def enpowerLED():
     if request.method == "POST":
-        is_On = int(request.form["isOn"])
-        is_try = request.form["isTry"]
-        print(f"enpowerLED　開始 is_On={is_On}, is_try={is_try}")
-        imgB64 = db.set_LED(is_On)
-        if is_On:
-            # print("育成LEDオン")
-            if is_try != "true":                    # 本番ならば
-                contec.output(True)
-            pass
-        else:
-            # print("育成LEDオフ")
-            if is_try != "true":                    # 本番ならば
-                contec.output(False)
-            pass
+        is_On = int(request.form["isOn"])               # オンかオフか　1もしくは0
+        is_try = request.form["isTry"]                  # トライか本番か
+        is_Run = request.form["isRun"]                  # 自動運転中か手動操作中か
+
+        # 自動運転中のみDBに登録する
+        if is_Run == "true":                            # 自動運転中ならば
+            getEphem()                                  # 都度、暦を取得する
+            imgB64 = db.set_LED(is_On)                  # DBにLEDの状態を登録する　戻り値はグラフ
+        else:                                           # 手動操作中ならば
+            imgB64 = ""                                 # グラフを返す変数に空白を代入する
+
+        # コンテックへの出力
+        if is_try != "true":                            # トライではない、つまり本番ならば
+            contec.output(is_On)                        # オンもしくはオフの状態をコンテックに送る
+
         print("enpowerLED　完了")
         return json.dumps({"imgB64": imgB64})
 
@@ -298,6 +300,8 @@ def setClock():
         cmd = f"sudo date {set_time}"       # linuxのコマンド
         sp.Popen(cmd.split())               # 空白で区切ってリストにし、実行する
         return json.dumps({"response": "done"})
+
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
