@@ -30,7 +30,6 @@ humi_sensor = dht11.DHT11(pin=humi_pin)
 light_sum = 0               # 光センサーオフの累計
 sensing_count = 1           # 光センサー計測リセット回数
 light_cnt = 0               # 光センサー計測回数　sensing_countの回数でリセット
-daily_date = datetime.date.today().strftime("%Y/%m/%d")           # 今日の文字列
 
 # 日時を文字列として返す
 def getTime():
@@ -112,7 +111,7 @@ def showSummaryGraph():
 @app.route("/showDairyGraph", methods=["POST"])
 def showDairyGraph():
     if request.method == "POST":
-        light_b64, temp_b64 = db.draw_dailygraph(daily_date)
+        light_b64, temp_b64 = db.draw_dailygraph()
         result = {"light_b64":light_b64, "temp_b64":temp_b64}
         return json.dumps(result)
 
@@ -250,6 +249,7 @@ def getContec():
     if request.method == "POST":
         is_try = request.form["isTry"]
         is_light_cnt = request.form["isLightCnt"]
+        print(is_try, is_light_cnt)
         if is_light_cnt == "true":
             light_cnt = (light_cnt+1) % sensing_count
             if light_cnt == 0:
@@ -304,5 +304,5 @@ def setClock():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host="0.0.0.0", port=5000, debug=True)
     # app.run(debug=True)

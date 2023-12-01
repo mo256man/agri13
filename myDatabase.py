@@ -3,9 +3,10 @@ import datetime
 import pandas as pd
 import random
 import matplotlib
-matplotlib.use("Agg")                   # メインスレッド外で使うときはこうする
+matplotlib.use("Agg")                   # メインスレッド外で使うときはこうする　ただしfig.show()が使えなくなる
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import matplotlib.ticker as ticker
 import numpy as np
 import cv2
 import base64
@@ -18,9 +19,9 @@ class DB():
         """
         self.dbname = "agri.db"                                         # データベース名
         self.get_config()                                               # 設定データを読み込む
-        self.dpi = 72                                                   # グラフ作成時のdpi
-        plt.rcParams["figure.dpi"] = self.dpi
         # plt.rcParams["font.family"] = "IPAexGothic"
+        self.dpi = 72                                                   # matplotlibのdpi
+        plt.rcParams["figure.dpi"] = self.dpi
         plt.rcParams["font.size"] = 20
 
 
@@ -36,19 +37,21 @@ class DB():
         dict = {}
         for index, row in df.iterrows():                                # dataframeを辞書にする
             dict[index] = row["value"]
-        # 辞書の中でよく使う値を変数として設定する
+        # 設定データの中でよく使う値を変数として設定する
         self.cumsum_date =  dict["cumsum_date"]                         # 累計の始点
         self.ephem_config = {   "place": dict["place"],
                                 "lat": dict["lat"],
                                 "lon": dict["lon"],
                                 "elev": dict["elev"]}
-        self.ephem = Ephem(self.ephem_config)
+        self.ephem = Ephem(self.ephem_config)                           # 緯度経度をもとに暦を取得する
         return dict
 
 
     def set_config(self, dict):
         """
         設定データを書き込む
+        Args:
+            dict : keyが設定の項目、valueがその値となる辞書
         """
         df = pd.DataFrame(index=[], columns=["index", "value"])         # 空のデータフレームを用意する
         for key, value in dict.items():                                 # 辞書をデータフレームにする
@@ -58,7 +61,7 @@ class DB():
         df.to_sql("config", conn, if_exists="replace", index=None)      # dfをデータベースに書き込む
         cur.close()
         conn.close()
-        self.cumsum_date = df.at["cumsum_date", "value"]                # 累計の始点
+        self.cumsum_date = df.at["cumsum_date", "value"]                # 累計の始点を変数として再定義する
 
 
     def set_temperature(self, temp, humi, strdt=None):
@@ -98,9 +101,7 @@ class DB():
         Args:
             date: 日付（文字列）
         """
-        print("*"*100)
-        print(self.ephem_config)
-        config = self.ephem_config                                      # 緯度経度などの設定を取り込む
+        config = self.ephem_config                                      # 緯度経度などの設定を取得する
         dict = self.ephem.get_data()                                    # 暦を算出する
         self.set_ephem(dict)                                            # サマリーに今日の暦を書き込む
         summary_exists = self.exists("summary", date)                   # サマリーにその日のデータがあるか
@@ -117,12 +118,14 @@ class DB():
             else:                                                       # サマリーにその日のデータがなければ追加挿入する
                 sql = f"INSERT INTO summary(date, max_temp, min_temp, mean_temp)"\
                         f" VALUES('{date}','{max_temp}', {min_temp}, {mean_temp})"
+            print(sql)
             conn = sqlite3.connect(self.dbname)
             cur = conn.cursor()
             cur.execute(sql)
             conn.commit()
             cur.close()
             conn.close()
+
 
     def make_daily_temp_graph(self, date=None):
         """
@@ -142,6 +145,7 @@ class DB():
         df = pd.read_sql_query(sql, conn)                               # sql実行しpandas形式で格納する
         # サマリーデータ取得
         sql = f"SELECT sunrise_time, sunset_time, mean_temp FROM summary WHERE date='{date}'"
+        print(sql)
         cur.execute(sql)
         result = cur.fetchall()[0]                                      # fetchはリストを返すのでその中身を取得する
         cur.close()
@@ -156,29 +160,21 @@ class DB():
         dt_sunset = str2datetime(f"{date} {sunset_time}")               # 日の入り
         dt_0 = str2datetime(f"{date} 00:00")                            # 指定した日の00:00のdatetime
         dt_24 = str2datetime(f"{date} 23:59")
+
         # グラフ描画
         x = df.index.to_list()
         y = df["temperature"].tolist()
-
-        width_px, height_px = 900, 200                                  # ピクセルでのサイズ
-        width_in, height_in = width_px/self.dpi, height_px/self.dpi     # インチでのサイズ（整数でなくてもよい）
-        fig, ax = plt.subplots(figsize=(width_in, height_in))
-        ax = plt.axes([0.3, 0.1, 0.7, 0.9])
-        ax.spines["right"].set_visible(False)
-        ax.spines["top"].set_visible(False)
-        plt.gca().spines['right'].set_visible(False)
-        plt.gca().spines['top'].set_visible(False)
+        fig, ax = self.getEmptyFig()
         ax.set_xlim(dt_0, dt_24)
         locator = mdates.AutoDateLocator()
         locator.intervald["HOURLY"] = 3                                 # x軸 3時間ごとに目盛表記
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%H"))
         ax.axvspan(dt_0, dt_sunrise, color="gray", alpha=0.3)           # 夜の背景
         ax.axvspan(dt_sunset, dt_24, color="gray", alpha=0.3)
-        ax.vlines(dt_now, min(y), max(y), "RED")                        # 現在時刻に赤線
+        ax.vlines(dt_now, min(y)-5, max(y)+5, "RED", linewidth=5)       # 現在時刻に赤線
         ax.hlines(mean_temp, dt_0, dt_24, "BLUE", linestyles="dotted")
         ax.plot(x, y, "-b", linewidth=2)
         ax.set_title(f"{date}の気温 平均{mean_temp}度")
-        fig.tight_layout()
         fig.canvas.draw()
         imgB64 = fig2str64(fig)
         return imgB64
@@ -211,7 +207,6 @@ class DB():
             imgB64: デイリーグラフの画像
         """
         # DBに登録する
-        print("set_LED start")
         conn = sqlite3.connect(self.dbname)
         cur = conn.cursor()
         dt_now = datetime.datetime.now()                                # 今
@@ -222,10 +217,8 @@ class DB():
         conn.commit()
         cur.close()
         conn.close()
-        print("set_LED end")
         self.set_LED_summary(strdate)
         strB64 = db.make_daily_light_graph(strdate)
-        print("set_LED end2")
         return strB64
 
 
@@ -301,7 +294,8 @@ class DB():
         df["datetime"] = pd.to_datetime(df["datetime"])                 # 日時を文字列からdatetimeにする
         
         # グラフデータ作成
-        x, y = [dt_0], [0]                                              # xとyの初期値 0:00に点灯オフ
+        dt, value = dt_0, 0                                             # xとyの初期値　00:00にオフ
+        x, y = [dt], [value]                                            # xとyに初期値を代入
         for dt, value in zip(df["datetime"], df["value"]):              # 各行について
             if value == y[-1]:                                          # 値が一つ前と同じならば
                 pass                                                    # グラフ的には変化ないので何もしない
@@ -335,29 +329,25 @@ class DB():
         sql = f"UPDATE summary"\
                 f" SET lighting_minutes={lighting_minutes}"\
                 f" WHERE date='{date}'"
+        print("LEDのデイリーデータ")
+        print(sql)
         cur.execute(sql)                                                # 累計点灯時間をサマリーに登録する
         conn.commit()
         cur.close()
         conn.close()
 
         # グラフ描画
-        width_px, height_px = 900, 200                                  # ピクセルでのサイズ
-        width_in, height_in = width_px/self.dpi, height_px/self.dpi     # インチでのサイズ（整数でなくてもよい）
-        fig, ax = plt.subplots(figsize=(width_in, height_in))
-        ax = plt.axes([0.3, 0.1, 0.7, 0.9])
-        ax.spines["right"].set_visible(False)
-        ax.spines["top"].set_visible(False)
+        fig, ax = self.getEmptyFig()
         ax.set_xlim(dt_0, dt_24)                                        # x軸の範囲
-        ax.set_ylim(0, 1)                                               # y軸の範囲
+        ax.set_ylim(-0.2, 1.2)                                          # y軸の範囲
         locator = mdates.AutoDateLocator()
         locator.intervald["HOURLY"] = 3                                 # x軸 3時間ごとに目盛表記
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%H"))        # x軸の書式
-        ax.fill_between(x, y, "-", linewidth=2, color="orange")         # プロット y軸との間塗りつぶし
-        ax.vlines(dt_now, 0, 1, "RED")                                  # 現在時刻に赤線
-        ax.set_title(f"{date}の点灯時間 合計{lighting_minutes}分")      # タイトル
+        ax.fill_between(x, y, "-", linewidth=0.1, color="orange")       # プロット y軸との間塗りつぶし
+        ax.vlines(dt_now, -0.2, 1.2, "RED", linewidth=5)                # 現在時刻に赤線
+        ax.set_title(f"{date}の点灯時間 合計{lighting_minutes}分")         # タイトル
         ax.axvspan(dt_0, dt_sunrise, color="gray", alpha=0.3)           # 夜の背景
         ax.axvspan(dt_sunset, dt_24, color="gray", alpha=0.3)           # 夜の背景
-        fig.tight_layout()
         fig.canvas.draw()
         imgB64 = fig2str64(fig)
         return imgB64
@@ -544,18 +534,12 @@ class DB():
                         "lighting_minutes_sum": df.at[d, "lighting_minutes_sum"],
                         "mean_temp_sum": df.at[d, "mean_temp_sum"],
                         }                                               # 日ごとの辞書として登録する
-        print("グラフ描くぞ")
+
         # サマリーグラフ
-        width_px, height_px = 900, 200                                  # ピクセルでのサイズ
-        width_in = width_px/self.dpi                                    # インチでのサイズ（整数でなくてもよい）
-        height_in = height_px/self.dpi
         x = [key[5:] for key in dict.keys()]                            # yyyy/mm/dd から yy/dd にしてx軸とする
-        print("準備完了")
 
         # 温度のグラフ
-        fig, ax = plt.subplots(figsize=(width_in, height_in))
-        ax.spines["right"].set_visible(False)
-        ax.spines["top"].set_visible(False)
+        fig, ax = self.getEmptyFig()
         y_max = [item["max_temp"] for item in dict.values()]
         y_min = [item["min_temp"] for item in dict.values()]
         y_mean = [item["mean_temp"] for item in dict.values()]
@@ -563,7 +547,6 @@ class DB():
         ax.plot(x, y_min, ":b", linewidth=1)
         ax.plot(x, y_mean, ".-b", linewidth=2)
         ax.set_title("最高・最低・平均気温（度）")
-        fig.tight_layout()
         for i, value in enumerate(y_mean):
             ax.text(x[i], y_mean[i]+ 2, value)
             fig.canvas.draw()
@@ -571,13 +554,10 @@ class DB():
         print("温度グラフ　完了")
 
         # 点灯時間のグラフ
-        fig, ax = plt.subplots(figsize=(width_in, height_in))
-        ax.spines["right"].set_visible(False)
-        ax.spines["top"].set_visible(False)
+        fig, ax = self.getEmptyFig()
         y = [item["lighting_minutes"] for item in dict.values()]
         ax.plot(x, y, ".-", linewidth=2, color="orange")
         ax.set_title("日当たりのLED点灯時間（分）")
-        fig.tight_layout()
         for i, value in enumerate(y):
             ax.text(x[i], y[i]+ 2, value)
             fig.canvas.draw()
@@ -734,8 +714,8 @@ class DB():
         Args:
             date: 日付（文字列）Noneならば今日
         Returns:
-            lightB64
-            tempB64
+            lightB64 : LED点灯時間グラフ
+            tempB64  : 温度グラフ
         """
         dt_now = datetime.datetime.now()
         if date is None:                                                # 日付がNoneだったら
@@ -745,17 +725,31 @@ class DB():
         return lightB64, tempB64
 
 
+    def getEmptyFig(self):
+        # 共通サイズの空のfigとAxを作成する
+        width_px, height_px = 900, 200                                  # ピクセルでのサイズ
+        width_in, height_in = width_px/self.dpi, height_px/self.dpi     # インチでのサイズ（整数でなくてもよい）
+        fig, ax = plt.subplots(figsize=(width_in, height_in))
+        ax.set_position([0.08, 0.12, 0.9, 0.7])                         # fig内のaxのleft, bottom, width, heightを指定する
+        ax.spines["right"].set_visible(False)                           # 右軸を非表示にする
+        ax.spines["top"].set_visible(False)                             # 上軸を非表示にする
+        ax.xaxis.set_minor_locator(ticker.AutoMinorLocator(3))          # x軸補助目盛　主目盛が3Hごとなので3分割する
+        ax.grid(axis="x", color="gray",which="both", linestyle="--", alpha=0.5)     # 主目盛と補助目盛の両方に目盛線を引く
+        return fig, ax
+
+
 def fig2str64(fig):
     # matplotlib.pyplotの画像をBase64の画像に変換する
-    img = np.array(fig.canvas.renderer.buffer_rgba())           # numpy配列にする
-    img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)                 # OpenCV画像にする
+    img = np.array(fig.canvas.renderer.buffer_rgba())                   # numpy配列にする
+    img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)                         # OpenCV画像にする
     #cv2.imshow("graph", img)
     #cv2.waitKey(0)
     #cv2.destroyAllWindows()
-    _, imgEnc = cv2.imencode(".jpg", img)                       # メモリ上にエンコード
-    imgB64 = base64.b64encode(imgEnc)                           # base64にエンコード
-    strB64 = "data:image/jpg;base64," + str(imgB64, "utf-8")    # 文字列化
+    _, imgEnc = cv2.imencode(".jpg", img)                               # メモリ上にエンコード
+    imgB64 = base64.b64encode(imgEnc)                                   # base64にエンコード
+    strB64 = "data:image/jpg;base64," + str(imgB64, "utf-8")            # 文字列化
     return strB64
+
 
 def str2datetime(str):
     # 文字列をdatetimeに変換する
@@ -765,7 +759,7 @@ def str2datetime(str):
 db = DB()
 
 def main():
-    db.saveCSV()
+    db.draw_dailygraph()
     print("done.")
 
 if __name__ == "__main__":

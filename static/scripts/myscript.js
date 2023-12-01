@@ -62,6 +62,7 @@ $(async function() {
             addMsg(time + "　起動しました");
             showRunLamp(isRun);
             getTimeMode();
+            clearLightMsg();
         };
     });
 
@@ -72,6 +73,7 @@ $(async function() {
             showRunLamp(isRun);
             lastmode = "";                      // 起動ボタン押したときに時間モードを調べるためlastmodeの値をどのモードでもない値にする
             addMsg(time + "　停止しました");
+            consoleTimeLog("停止ボタン　オン");
         };
     });
 
@@ -91,6 +93,7 @@ $(async function() {
             $("#main_msg").addClass("main_msg_ng");
             $("#main_msg").text("手動操作モードです　制御盤で自動に切り替え、起動ボタンを押してください");
         }
+        consoleTimeLog("自動手動切り替えスイッチ　変更");
         showLights(lights);
         await enpowerLED(isLED);
         showLedLamp(isLED);
@@ -281,7 +284,7 @@ async function showTime() {
 
     // 毎秒実施
     // 光センサーの状態を積算するかどうかの条件
-    const cond = isRun && (mode=="昼" || isNightSense);                 // 条件　運転中 かつ （昼間 もしくは夜でもセンシングする設定）
+    const cond = isRun && (! isForce);                                  // 条件　運転中 かつ 強制でない（光センサー取得する設定）ならば
     
     // 条件かつ定期的にコンテック（光センサー＋バッテリー）を取得する
     if (time >= sensing_time) {                                         // センサーを取得する時刻になったら
@@ -298,10 +301,9 @@ async function showTime() {
 
 
     // 一定時間で温湿度を更新する
-    if ((m % 10)==0 && s==0) {                                          // 毎時0分・30分に
-        getHumi(isHumiTry);                                             // 温湿度取得
+    if ((m % 10)==0 && s==20) {                                          // 毎時0分・30分に
+        await getHumi(isHumiTry);                                       // 温湿度取得
     }
-
 
     // 起動中のみ時刻する機能
     if (isAuto) {
@@ -381,7 +383,21 @@ function addLightLog(txt) {
 
 // 光センサーログを削除する
 function clearLightMsg() {
-    $("#lightlog").html("光センサー　○：曇り　−：晴れ<br>　" + sensing_interval + "分間隔で" + sensing_count + "回測定し、次の点灯消灯を判断します<br><br>");
+    var html = "";
+    if (isRun) {                                                        // 起動中ならば
+        if (isForce) {                                                  // 強制中ならば
+            if (isLED) {                                                // 強制点灯中ならば
+                html = "強制点灯中です";
+            } else {                                                    // 強制消灯中ならば
+                html = "強制消灯中です";
+            };
+        } else {                                                        // 光センサー制御中ならば
+            html = `光センサー　○：曇り　−：晴れ<br>　${sensing_interval}分間隔で${sensing_count}回測定し、次の点灯消灯を判断します<br><br>`;
+        };
+    } else {                                                            // 起動中でなければ
+        html = "停止中です";
+    }
+    $("#lightlog").html(html);
 }
 
 
@@ -464,7 +480,7 @@ async function getHumi(isTry) {
             consoleTimeLog("温湿度　センサー失敗");
         }
     }).fail(function() {                        // ajaxのリターン失敗したら更新しない
-        consoleTimeLog("湿度　通信失敗");
+        consoleTimeLog("温湿度　通信失敗");
     });
 }
 
@@ -704,18 +720,30 @@ async function getTimeMode() {
     switch (true) {
         case time >= evening_end + ":00":   // 日の入り以降は夜モード
             mode = "夜";
+            if (isNightSense) {             // 夜でも光センサー取得する設定ならば
+                mode += "（センシング）";
+            }
             break;
-        case true >= evening_start + ":00": // 日の入り1.5H前以降は夕方モード
+        case time >= evening_start + ":00": // 日の入り1.5H前以降は夕方モード
             mode = "夕方";
+            if (isNightSense) {             // 夜でも光センサー取得する設定ならば
+                mode += "（センシング）";
+            }
             break;
-        case true >= morning_end + ":00":   // 日の出1.5H後以降は昼モード
+        case time >= morning_end + ":00":   // 日の出1.5H後以降は昼モード
             mode = "昼";
             break;
-        case true >= morning_start + ":00": // 日の出以降は朝モード
+        case time >= morning_start + ":00": // 日の出以降は朝モード
             mode = "朝";
+            if (isNightSense) {             // 夜でも光センサー取得する設定ならば
+                mode += "（センシング）";
+            }
             break;
         default:                            // それ以前（0時以降）は夜モード
             mode = "夜";
+            if (isNightSense) {             // 夜でも光センサー取得する設定ならば
+                mode += "（センシング）";
+            }
     };
 
     // LED制御を変更する
@@ -747,9 +775,13 @@ async function getTimeMode() {
                 isForce = true;             // 強制的に
                 isLED = true;               // 点灯する
                 break;
+            default:                        // それ以外（「センシング」）ならば
+                isForce = false;            // 強制ではない
+                isLED = false;              // 消灯する
         };
         msg = time + "　モード変更　" + mode;
         addMsg(msg);
+        clearLightMsg();
         await enpowerLED(isLED);            // 育成LEDを制御する
     }
     $("#mode").text(mode);
@@ -867,10 +899,14 @@ async function setConfig() {
     }
 
     // トライか本番かの設定は別途登録する  true/falseに0を足すことで1/0にする
-    dict["isHumiTry"] = $("#HumiTry").hasClass("btnTryOn") + 0;
-    dict["isContecTry"] = $("#ContecTry").hasClass("btnTryOn") + 0;
-    dict["isLEDTry"] = $("#LEDTry").hasClass("btnTryOn") + 0;
-    dict["isNightSense"] = $("#NightSense").hasClass("btnTryOn") + 0;
+    isHumiTry = $("#HumiTry").hasClass("btnTryOn");
+    isContecTry = $("#ContecTry").hasClass("btnTryOn");
+    isLEDTry = $("#LEDTry").hasClass("btnTryOn");
+    isNightSense = $("#NightSense").hasClass("btnTryOn");
+    dict["isHumiTry"] = isHumiTry + 0;
+    dict["isContecTry"] = isContecTry + 0;
+    dict["isLEDTry"] = isLEDTry + 0;
+    dict["isNightSense"] = isNightSense + 0;
 
     // 設定ファイルに書き込む
     await $.ajax("/setConfig", {
@@ -884,9 +920,6 @@ async function setConfig() {
 
     if (isNightSense) {                     // 夜でもセンシングする設定ならば1分後に測定する
         sensing_time = sensing_time = dayjs().add(1, "minutes").format("HH:mm:30");
-    } else {                                // 夜はセンシングしない設定ならば
-        lastmode = ""                       // ラストモードをリセットすることで
-        getTimeMode();                      // 強制的に時間モードを変更する（元に戻す）
     }
 
     morning_offset = dict["morning_offset"];
@@ -897,8 +930,8 @@ async function setConfig() {
     sensing_count = dict["sensing_count"];
     batt_yellow = dict["batt_yellow"];
     batt_green = dict["batt_green"];
-    clearLightMsg();
     calcTime();                                     // 変更した設定に伴い再計算する
+    lastmode = "";                                  // 先刻のモードをどれでもないものにする（1秒後に正しい状態を表示する）
     //await showSummaryGraph();                     // 変更した設定に伴い再描画する
     //await getSummaryTable();
 
@@ -907,17 +940,18 @@ async function setConfig() {
 
 // データベース削除
 async function delDB(date) {
+    consoleTimeLog("データベース削除 開始");
     await $.ajax("/delDB", {
         type: "POST",
         data: {"date": date},
     }).done(function(data) {
-        console.log("データベース削除成功");
+        consoleTimeLog("データベース削除 成功");
     }).fail(function(e) {
-        console.log("データベース削除失敗");
-        console.log(e);
+        consoleTimeLog("データベース削除 失敗");
+        consoleTimeLog(e);
     });
-    //await showSummaryGraph();                       // 変更されたDBに基づきサマリーグラフ作成
-    //await getSummaryTable();                        // 変更されたDBに基づきサマリーテーブル作成
+    await showSummaryGraph();                       // 変更されたDBに基づきサマリーグラフ作成
+    await getSummaryTable();                        // 変更されたDBに基づきサマリーテーブル作成
 };
 
 // データベースCSV出力
@@ -936,6 +970,15 @@ async function saveCSV() {
 
 // PythonでOSの時刻を変更する関数
 async function setClock(set_time) {
+    // 時計変更する前に、変更前の日時でLEDをオフにする
+    // そうしないとLEDがオンの場合その日は23:59までずっとオンだったことになってしまう
+    consoleTimeLog("時計変更 開始");
+    if (isLED) {                                        // LED点灯状態ならば
+        await enpowerLED(false)                         // LED消灯する
+    }
+    lastmode = "";                                      // 時間帯モードをリセットする
+    
+    // 時計変更する
     await $.ajax("/setClock", {
         type: "POST",
         data: {"set_time": set_time},
@@ -945,6 +988,9 @@ async function setClock(set_time) {
         consoleTimeLog("時計変更 失敗");
         console.log(e);
     });
+
+    await showDairyGraph();                             // デイリーグラフ更新する
+
 };
 
 
@@ -955,11 +1001,13 @@ function showRunLamp(bool) {
         $("#main_msg").removeClass("main_msg_ng");
         $("#main_msg").addClass("main_msg_ok");
         $("#main_msg").text("起動中です");
+        consoleTimeLog("起動ボタン　オン");
     } else {
         $("#btnRun").attr("src", "static/images/btnOrangeOff.png");
         $("#main_msg").removeClass("main_msg_ok");
         $("#main_msg").addClass("main_msg_ng");
         $("#main_msg").text("停止中です　制御盤で起動ボタンを押してください");
+        consoleTimeLog("起動ボタン　オフ");
     }
 }
 
@@ -967,8 +1015,10 @@ function showRunLamp(bool) {
 function showReadyLamp(bool) {
     if (bool) {
         $("#lampReady").attr("src", "static/images/btnGreenOn.png");
+        consoleTimeLog("運転準備　オン");
     } else {
         $("#lampReady").attr("src", "static/images/btnGreenOff.png");
+        consoleTimeLog("運転準備　オン");
     }
 }
 
