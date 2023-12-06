@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request
 from myEphem import Ephem
-# from myContec import Contec
+from myContec import Contec
 from myDatabase import DB
 import json
 import random
@@ -11,7 +11,7 @@ import os
 import subprocess as sp
 import numpy as np
 
-"""
+
 import RPi.GPIO as GPIO
 import dht11
 
@@ -24,7 +24,6 @@ led_pin = 16
 pilot_pin = 21
 pilot_status = False
 humi_sensor = dht11.DHT11(pin=humi_pin)
-"""
 
 # グローバル変数
 light_sum = 0               # 光センサーオフの累計
@@ -37,9 +36,7 @@ def getTime():
     return dt.strftime("%Y/%m/%d %H:%M:%S")
 
 
-"""
 contec = Contec()                   # コンテックのクラス
-"""
 db = DB()                           # データベースのクラス
 
 app = Flask(__name__)
@@ -65,8 +62,8 @@ def saveCSV():
     if request.method == "POST":
         cumsum_date = request.form["cumsum_date"]
         db.saveCSV(cumsum_date=cumsum_date)
-        cmd = "pcmanfm /home/tab/csvデータ"    # linuxのコマンド
-        sp.Popen(cmd.split())               # 空白で区切ってリストにし、実行する
+        cmd = "pcmanfm /home/tab/csvデータ"          # linuxのコマンド
+        sp.Popen(cmd.split())                       # 空白で区切ってリストにし、実行する
         return json.dumps({"result": "OK"})
 
 
@@ -189,7 +186,7 @@ def getConfig():
         arr = []
         for i in [1, 2, 3, 4]:
             arr.append(int(dict[f"output{i}"]))
-#        contec.define_output_relays(arr)
+        contec.define_output_relays(arr)
         sensing_count = int(dict["sensing_count"])
         return json.dumps(dict)
 
@@ -227,9 +224,7 @@ def setConfig():
         for i in [1,2,3,4]:
             key = f"output{i}"
             arr.append(int(request.form[key]))      # 1/0 をリストに追記していく
-        """
         contec.define_output_relays(arr)
-        """
         light_cnt = 0                               # 設定変更したら光センサー取得カウントをリセットする
         return json.dumps({"response": "done"})
 

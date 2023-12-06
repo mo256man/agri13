@@ -532,7 +532,7 @@ async function getContec(isTry, isLightCnt) {
                             msg = "十分明るいので消灯します";
                             const lightSeconds = dayjs().diff(lightOnTime, "seconds") + 5;  // lightOnTimeから今までの時間（秒） 念のため5秒プラスしておく
                             const lightMinutes = Math.trunc(lightSeconds/60);               // 秒を分にする
-                            msg += "　点灯時間 " + lightMinutes + "分";           // 点灯時間表示　この数値はDBには送らない
+                            //msg += "　点灯時間 " + lightMinutes + "分";           // 点灯時間表示　この数値はDBには送らない
                             addMsg(time + "　" + msg);
                         } else {                                                // さっきまでも消灯していたら
                             isLightChange = false;                              // 点灯消灯状態　変化しない
@@ -556,11 +556,11 @@ async function getContec(isTry, isLightCnt) {
                             isLED = false;                                      // 消灯にする
                             if (lastIsLED) {                                    // さっきまで点灯していたら
                                 isLightChange = true;                           // 点灯消灯状態　変化する
-                                const lightSeconds = dayjs().diff(lightOnTime, "seconds") + 5;  // lightOnTimeから今までの時間（秒） 念のため2秒プラスしておく
+                                const lightSeconds = dayjs().diff(lightOnTime, "seconds") + 5;  // lightOnTimeから今までの時間（秒） 念のため5秒プラスしておく
                                 const lightMinutes = Math.trunc(lightSeconds/60);               // 秒を分にする
                                 //msg = "バッテリーが不足気味なので消灯します"
                                 msg = "消灯します"
-                                msg += "　点灯時間 " + lightMinutes + "分";
+                                //msg += "　点灯時間 " + lightMinutes + "分";
                                 addMsg(time + "　" + msg);
                             } else {                                            // さっきまでも消灯していたら
                                 isLightChange = false;                          // 点灯消灯状態　変化しない
@@ -933,7 +933,7 @@ async function setConfig() {
     calcTime();                                     // 変更した設定に伴い再計算する
     lastmode = "";                                  // 先刻のモードをどれでもないものにする（1秒後に正しい状態を表示する）
     //await showSummaryGraph();                     // 変更した設定に伴い再描画する
-    //await getSummaryTable();
+    await getSummaryTable();
 
 };
 
@@ -1001,12 +1001,16 @@ function showRunLamp(bool) {
         $("#main_msg").removeClass("main_msg_ng");
         $("#main_msg").addClass("main_msg_ok");
         $("#main_msg").text("起動中です");
+        $("#clock_msg").text("　　時刻設定は起動オフ状態でおこなってください");
+        $("#setClock").hide();
         consoleTimeLog("起動ボタン　オン");
     } else {
         $("#btnRun").attr("src", "static/images/btnOrangeOff.png");
         $("#main_msg").removeClass("main_msg_ok");
         $("#main_msg").addClass("main_msg_ng");
         $("#main_msg").text("停止中です　制御盤で起動ボタンを押してください");
+        $("#clock_msg").text("");
+        $("#setClock").show();
         consoleTimeLog("起動ボタン　オフ");
     }
 }

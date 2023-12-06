@@ -656,7 +656,6 @@ class DB():
         cur.close()
         conn.close()
 
-
     def set_ephem(self, dict):
         """
         日の出・日の入り時刻をサマリーに登録する

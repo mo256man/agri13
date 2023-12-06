@@ -539,3 +539,9 @@ div.btnCsv{
     text-align:center;
     font-size: large;
 }
+
+div.clock_msg {
+    color: red;
+    margin: 0 auto;
+    font-size: large;
+}
